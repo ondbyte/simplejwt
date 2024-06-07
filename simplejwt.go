@@ -7,10 +7,6 @@ import (
 	"time"
 )
 
-type Cipher interface {
-	Encrypt(plaintext []byte) ([]byte, error)
-}
-
 type Service struct {
 	signer Signer
 }
@@ -61,11 +57,15 @@ func (j *Service) VerifyJWT(token string, claims any) (err error) {
 	if len(splitted) != 3 {
 		return errors.New("token must have three component separated by '.'")
 	}
-	actualSign, err := j.signer.Sign(splitted[0] + "." + splitted[1])
+	sign, err := base64UrlDecode(splitted[2])
 	if err != nil {
 		return err
 	}
-	if splitted[2] != base64UrlEncode(actualSign) {
+	valid, err := j.signer.Verify(splitted[0]+"."+splitted[1], sign)
+	if err != nil {
+		return err
+	}
+	if !valid {
 		return errors.New("invalid signature")
 	}
 	bClaimsJson, err := base64UrlDecode(splitted[1])

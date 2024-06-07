@@ -8,8 +8,16 @@ import (
 
 // Struct to hold the HMAC Hash object
 type _HMACSHA256Signer struct {
-	secret []byte
-	h      hash.Hash
+	h hash.Hash
+}
+
+// Verify implements Signer.
+func (signer *_HMACSHA256Signer) Verify(data string, sign string) (bool, error) {
+	newSign, err := signer.Sign(data)
+	if err != nil {
+		return false, err
+	}
+	return newSign == sign, nil
 }
 
 // Header implements Signer.
@@ -20,8 +28,7 @@ func (signer *_HMACSHA256Signer) Header() string {
 // Constructor for HMACSHA256Signer
 func NewHMACSHA256Signer(secret string) Signer {
 	return &_HMACSHA256Signer{
-		secret: []byte(secret),
-		h:      hmac.New(sha256.New, []byte(secret)),
+		h: hmac.New(sha256.New, []byte(secret)),
 	}
 }
 
