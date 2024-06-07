@@ -1,33 +1,23 @@
 package simplejwt
 
 import (
-	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
+	"strings"
 	"time"
 )
 
 type Cipher interface {
 	Encrypt(plaintext []byte) ([]byte, error)
-	Decrypt(ciphertext []byte) ([]byte, error)
 }
 
 // aes cypher ecrytpts and decrypts data thats it.
 type aesCipher struct {
 	block cipher.Block
-}
-
-// creates a new aes based cipher, expects a 16, 24 or 32 byte key
-func NewAESCipher(key []byte) (Cipher, error) {
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-	return &aesCipher{block: block}, nil
 }
 
 func (a *aesCipher) Encrypt(plaintext []byte) ([]byte, error) {
@@ -66,11 +56,11 @@ func (a *aesCipher) Decrypt(ciphertext []byte) ([]byte, error) {
 }
 
 type Service struct {
-	cipher Cipher
+	HMACSHA256Signer
 }
 
-func NewService(cipher Cipher) *Service {
-	return &Service{cipher: cipher}
+func NewService(secret string) *Service {
+	return &Service{*NewHMACSHA256Signer(secret)}
 }
 
 type baseClaims struct {
@@ -92,38 +82,47 @@ func newEmptyClaims(data any) *baseClaims {
 }
 
 // generates a new JWT token
+// claims should be a struct ptr
 func (j *Service) NewJWT(claims any, validDuration time.Duration) (string, error) {
 	bclaims := newClaims(claims, validDuration)
-	claimsJSON, err := json.Marshal(bclaims)
+	bclaims.Expiry = time.Now().Add(validDuration)
+	claimsJSON, err := json.MarshalIndent(bclaims, "", "")
 	if err != nil {
 		return "", err
 	}
-
-	encryptedClaims, err := j.cipher.Encrypt(claimsJSON)
+	header,payload, sign, err := j.Sign(string(claimsJSON))
 	if err != nil {
 		return "", err
 	}
-
-	token := base64.StdEncoding.EncodeToString(encryptedClaims)
-	return token, nil
+	return header + "." + payload + "." + sign, nil
 }
 
 // verifies the token and scans the claims into the claims parameter
-func (j *Service) VerifyToken(token string, claims any) (expired bool, err error) {
-	encryptedClaims, err := base64.StdEncoding.DecodeString(token)
+func (j *Service) VerifyJWT(token string, claims any) (err error) {
+	splitted := strings.Split(token, ".")
+	if len(splitted) != 3 {
+		return errors.New("token must have three component separated by '.'")
+	}
+	claims64 := splitted[1]
+	sign := splitted[2]
+	_, actualSign, err := j.Sign(claims64)
 	if err != nil {
-		return false, err
+		return err
 	}
-
-	decryptedClaims, err := j.cipher.Decrypt(encryptedClaims)
+	if sign != actualSign {
+		return errors.New("invalid signature")
+	}
+	bClaimsJson, err := base64.StdEncoding.DecodeString(claims64)
 	if err != nil {
-		return false, err
+		return err
 	}
-
-	bclaims := newEmptyClaims(claims)
-	if err := json.Unmarshal(decryptedClaims, bclaims); err != nil {
-		return false, err
+	bClaims := newEmptyClaims(claims)
+	err = json.Unmarshal(bClaimsJson, bClaims)
+	if err != nil {
+		return err
 	}
-
-	return time.Now().Unix() > bclaims.Expiry.Unix(), nil
+	if time.Now().Unix() > bClaims.Expiry.Unix() {
+		return errors.New("token has expired")
+	}
+	return nil
 }

@@ -13,39 +13,35 @@ func TestSimpleJwt(t *testing.T) {
 	tests := []struct {
 		name          string
 		tokenDuration time.Duration
-		expired       bool
+		expectedErr   bool
 	}{
 		{
 			name:          "hour",
 			tokenDuration: time.Hour,
-			expired:       false,
+			expectedErr:   false,
 		},
 		{
 			name:          "minute",
 			tokenDuration: time.Minute,
-			expired:       false,
+			expectedErr:   false,
 		},
 		{
 			name:          "second",
 			tokenDuration: time.Second,
-			expired:       false,
+			expectedErr:   false,
 		},
 		{
 			name:          "invalid",
 			tokenDuration: time.Minute * -1,
-			expired:       true,
+			expectedErr:   true,
 		},
 	}
 	for _, v := range tests {
 		// use 16 bit len for aes 128, 32 for 192, 64 for 256
 		// for example 16 bit for session token
 		// 32 bit for access/refresh token
-		key := []byte("12345678998765432112345678998765")
-		cipher, err := simple_jwt.NewAESCipher(key)
-		if err != nil {
-			panic(err)
-		}
-		jwtService := simple_jwt.NewService(cipher)
+		secret := "123"
+		jwtService := simplejwt.NewService(secret)
 		type MyClaims struct {
 			Name string
 			Age  uint
@@ -60,12 +56,12 @@ func TestSimpleJwt(t *testing.T) {
 		}
 		fmt.Println(token)
 		newClaims := &MyClaims{}
-		expired, err := jwtService.VerifyToken(token, newClaims)
-		if v.expired != expired {
-			panic(fmt.Sprintf("expected expired=%v, but got expired=%v", v.expired, expired))
+		err = jwtService.VerifyJWT(token, newClaims)
+		if v.expectedErr && err == nil {
+			panic("expected error but got nil")
 		}
-		if err != nil {
-			panic(err)
+		if !v.expectedErr && err != nil {
+			panic("expected no err but got err")
 		}
 		fmt.Println(reflect.DeepEqual(newClaims, claims))
 	}
