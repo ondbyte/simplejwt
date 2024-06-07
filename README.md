@@ -23,11 +23,11 @@ func main(){
     fmt.Println(token)
     newClaims := &MyClaims{}
     err = jwtService.VerifyJWT(token, newClaims)
-    if v.expectedErr && err == nil {
-    	panic("expected error but got nil")
+    if err == nil {
+    	panic(err)
     }
     if !v.expectedErr && err != nil {
-    	panic("expected no err but got err")
+    	panic(err)
     }
     fmt.Println(reflect.DeepEqual(newClaims, claims))
 }
