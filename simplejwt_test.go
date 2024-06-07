@@ -37,11 +37,9 @@ func TestSimpleJwt(t *testing.T) {
 		},
 	}
 	for _, v := range tests {
-		// use 16 bit len for aes 128, 32 for 192, 64 for 256
-		// for example 16 bit for session token
-		// 32 bit for access/refresh token
-		secret := "123"
-		jwtService := simplejwt.NewService(secret)
+		tokenDuration := v.tokenDuration
+		secret := "123" // change this accordingly
+		jwtService := simplejwt.NewService(simplejwt.NewHMACSHA256Signer(secret))
 		type MyClaims struct {
 			Name string
 			Age  uint
@@ -50,7 +48,7 @@ func TestSimpleJwt(t *testing.T) {
 			Name: "yadhu",
 			Age:  32,
 		}
-		token, err := jwtService.NewJWT(claims, v.tokenDuration)
+		token, err := jwtService.NewJWT(claims, tokenDuration)
 		if err != nil {
 			panic(err)
 		}

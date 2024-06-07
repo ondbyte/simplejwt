@@ -1,12 +1,8 @@
 package simplejwt
 
 import (
-	"crypto/cipher"
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"io"
 	"strings"
 	"time"
 )
@@ -15,52 +11,12 @@ type Cipher interface {
 	Encrypt(plaintext []byte) ([]byte, error)
 }
 
-// aes cypher ecrytpts and decrypts data thats it.
-type aesCipher struct {
-	block cipher.Block
-}
-
-func (a *aesCipher) Encrypt(plaintext []byte) ([]byte, error) {
-	gcm, err := cipher.NewGCM(a.block)
-	if err != nil {
-		return nil, err
-	}
-
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return nil, err
-	}
-
-	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
-	return ciphertext, nil
-}
-
-func (a *aesCipher) Decrypt(ciphertext []byte) ([]byte, error) {
-	gcm, err := cipher.NewGCM(a.block)
-	if err != nil {
-		return nil, err
-	}
-
-	nonceSize := gcm.NonceSize()
-	if len(ciphertext) < nonceSize {
-		return nil, errors.New("ciphertext too short")
-	}
-
-	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
-	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return plaintext, nil
-}
-
 type Service struct {
-	HMACSHA256Signer
+	signer Signer
 }
 
-func NewService(secret string) *Service {
-	return &Service{*NewHMACSHA256Signer(secret)}
+func NewService(secret Signer) *Service {
+	return &Service{signer: secret}
 }
 
 type baseClaims struct {
@@ -83,18 +39,20 @@ func newEmptyClaims(data any) *baseClaims {
 
 // generates a new JWT token
 // claims should be a struct ptr
-func (j *Service) NewJWT(claims any, validDuration time.Duration) (string, error) {
+func (s *Service) NewJWT(claims any, validDuration time.Duration) (string, error) {
 	bclaims := newClaims(claims, validDuration)
 	bclaims.Expiry = time.Now().Add(validDuration)
 	claimsJSON, err := json.MarshalIndent(bclaims, "", "")
 	if err != nil {
 		return "", err
 	}
-	header,payload, sign, err := j.Sign(string(claimsJSON))
+	header := base64UrlEncode(s.signer.Header())
+	payload := base64UrlEncode(string(claimsJSON))
+	sign, err := s.signer.Sign(header + "." + payload)
 	if err != nil {
 		return "", err
 	}
-	return header + "." + payload + "." + sign, nil
+	return header + "." + payload + "." + base64UrlEncode(sign), nil
 }
 
 // verifies the token and scans the claims into the claims parameter
@@ -103,21 +61,19 @@ func (j *Service) VerifyJWT(token string, claims any) (err error) {
 	if len(splitted) != 3 {
 		return errors.New("token must have three component separated by '.'")
 	}
-	claims64 := splitted[1]
-	sign := splitted[2]
-	_, actualSign, err := j.Sign(claims64)
+	actualSign, err := j.signer.Sign(splitted[0] + "." + splitted[1])
 	if err != nil {
 		return err
 	}
-	if sign != actualSign {
+	if splitted[2] != base64UrlEncode(actualSign) {
 		return errors.New("invalid signature")
 	}
-	bClaimsJson, err := base64.StdEncoding.DecodeString(claims64)
+	bClaimsJson, err := base64UrlDecode(splitted[1])
 	if err != nil {
 		return err
 	}
 	bClaims := newEmptyClaims(claims)
-	err = json.Unmarshal(bClaimsJson, bClaims)
+	err = json.Unmarshal([]byte(bClaimsJson), bClaims)
 	if err != nil {
 		return err
 	}
