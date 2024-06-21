@@ -7,28 +7,29 @@ all you need to do is
 ```go
 func main(){
     secret := "123" // change this accordingly
-    jwtService := simplejwt.NewService(simplejwt.NewHMACSHA256Signer(secret))
     type MyClaims struct {
     	Name string
     	Age  uint
+        Iat int64
     }
+    jwtService := simplejwt.NewService[MyClaims](simplejwt.NewHMACSHA256Signer(secret))
     claims := &MyClaims{
     	Name: "yadhu",
     	Age:  32,
+        Iat: time.Now().Unix()
     }
-    token, err := jwtService.NewJWT(claims, tokenDuration)
+    token, err := jwtService.NewJWT(claims)
     if err != nil {
     	panic(err)
     }
     fmt.Println(token)
-    newClaims := &MyClaims{}
-    err = jwtService.VerifyJWT(token, newClaims)
+    verifiedClaims,err = jwtService.VerifyJWT(token)
     if err == nil {
     	panic(err)
     }
-    if !v.expectedErr && err != nil {
-    	panic(err)
+    maxJwtValidity:=Duration.Second*1000
+    if verifiedClaims.Iat<time.Now().Add(-1*maxJwtValidity){
+        // validity is expired
     }
-    fmt.Println(reflect.DeepEqual(newClaims, claims))
 }
 ```

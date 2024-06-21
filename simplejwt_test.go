@@ -3,6 +3,7 @@ package simplejwt_test
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,56 +12,78 @@ import (
 
 func TestSimpleJwt(t *testing.T) {
 	tests := []struct {
-		name          string
-		tokenDuration time.Duration
-		expectedErr   bool
+		name           string
+		tokenDuration  time.Duration
+		expired        bool
+		messWithClaims bool
 	}{
 		{
 			name:          "hour",
 			tokenDuration: time.Hour,
-			expectedErr:   false,
+			expired:       false,
 		},
 		{
 			name:          "minute",
 			tokenDuration: time.Minute,
-			expectedErr:   false,
+			expired:       false,
 		},
 		{
 			name:          "second",
 			tokenDuration: time.Second,
-			expectedErr:   false,
+			expired:       false,
 		},
 		{
 			name:          "invalid",
 			tokenDuration: time.Minute * -1,
-			expectedErr:   true,
+			expired:       true,
+		},
+		{
+			name:           "invalid",
+			tokenDuration:  time.Minute * -1,
+			expired:        false,
+			messWithClaims: true,
 		},
 	}
 	for _, v := range tests {
-		tokenDuration := v.tokenDuration
 		secret := "123" // change this accordingly
-		jwtService := simplejwt.NewService(simplejwt.NewHMACSHA256Signer(secret))
+
 		type MyClaims struct {
 			Name string
 			Age  uint
+			Iat  int64
 		}
+
+		jwtService := simplejwt.NewService[MyClaims](simplejwt.NewHMACSHA256Signer(secret))
 		claims := &MyClaims{
 			Name: "yadhu",
 			Age:  32,
+			Iat:  time.Now().Add(v.tokenDuration).Unix(),
 		}
-		token, err := jwtService.NewJWT(claims, tokenDuration)
+		token, err := jwtService.NewJWT(claims)
 		if err != nil {
 			panic(err)
 		}
 		fmt.Println(token)
-		newClaims := &MyClaims{}
-		err = jwtService.VerifyJWT(token, newClaims)
-		if v.expectedErr && err == nil {
-			panic("expected error but got nil")
+		if v.messWithClaims {
+			splitted := strings.Split(token, ".")
+			splitted[1] += "yadhu"
+			token = strings.Join(splitted, ".")
 		}
-		if !v.expectedErr && err != nil {
-			panic("expected no err but got err")
+		verifiedClaims, err := jwtService.VerifyJWT(token)
+		if v.messWithClaims && err == nil {
+			panic("expected error while VerifyJWT")
 		}
-		fmt.Println(reflect.DeepEqual(newClaims, claims))
+		if !v.messWithClaims && err != nil {
+			panic("expected no error while VerifyJWT")
+		}
+		if v.messWithClaims {
+			continue
+		}
+		if verifiedClaims.Iat <= time.Now().Unix() {
+			if !v.expired {
+				panic("token cannot be expired")
+			}
+		}
+		fmt.Println(reflect.DeepEqual(verifiedClaims, claims))
 	}
 }

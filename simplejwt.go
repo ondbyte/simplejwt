@@ -4,41 +4,20 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
-	"time"
 )
 
-type Service struct {
+type Service[claims any] struct {
 	signer Signer
 }
 
-func NewService(secret Signer) *Service {
-	return &Service{signer: secret}
-}
-
-type baseClaims struct {
-	Claims interface{} `json:"claims"`
-	Expiry time.Time   `json:"expiry"`
-}
-
-func newClaims(data any, expiryDuration time.Duration) *baseClaims {
-	return &baseClaims{
-		Claims: data,
-		Expiry: time.Now().Add(expiryDuration),
-	}
-}
-
-func newEmptyClaims(data any) *baseClaims {
-	return &baseClaims{
-		Claims: data,
-	}
+func NewService[claims any](secret Signer) *Service[claims] {
+	return &Service[claims]{signer: secret}
 }
 
 // generates a new JWT token
 // claims should be a struct ptr
-func (s *Service) NewJWT(claims any, validDuration time.Duration) (string, error) {
-	bclaims := newClaims(claims, validDuration)
-	bclaims.Expiry = time.Now().Add(validDuration)
-	claimsJSON, err := json.MarshalIndent(bclaims, "", "")
+func (s *Service[c]) NewJWT(claims *c) (string, error) {
+	claimsJSON, err := json.MarshalIndent(claims, "", "")
 	if err != nil {
 		return "", err
 	}
@@ -51,34 +30,32 @@ func (s *Service) NewJWT(claims any, validDuration time.Duration) (string, error
 	return header + "." + payload + "." + base64UrlEncode(sign), nil
 }
 
-// verifies the token and scans the claims into the claims parameter
-func (j *Service) VerifyJWT(token string, claims any) (err error) {
+// verifies the signature of the jwt
+// you need to verify whether its expired or not using claims
+func (j *Service[c]) VerifyJWT(token string) (claims *c, err error) {
 	splitted := strings.Split(token, ".")
 	if len(splitted) != 3 {
-		return errors.New("token must have three component separated by '.'")
+		return nil, errors.New("token must have three component separated by '.'")
 	}
 	sign, err := base64UrlDecode(splitted[2])
 	if err != nil {
-		return err
+		return nil, err
 	}
 	valid, err := j.signer.Verify(splitted[0]+"."+splitted[1], sign)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !valid {
-		return errors.New("invalid signature")
+		return nil, errors.New("invalid signature")
 	}
 	bClaimsJson, err := base64UrlDecode(splitted[1])
 	if err != nil {
-		return err
+		return nil, err
 	}
-	bClaims := newEmptyClaims(claims)
-	err = json.Unmarshal([]byte(bClaimsJson), bClaims)
+	claims = new(c)
+	err = json.Unmarshal([]byte(bClaimsJson), claims)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if time.Now().Unix() > bClaims.Expiry.Unix() {
-		return errors.New("token has expired")
-	}
-	return nil
+	return claims, nil
 }
